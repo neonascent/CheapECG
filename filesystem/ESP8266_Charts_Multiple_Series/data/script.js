@@ -68,11 +68,24 @@ var chartT = new Highcharts.Chart({
   title: {
     text: 'Heart'
   },
+  legend: {
+          enabled: false
+  },
+   tooltip: {
+          enabled: false
+  },
+   exporting: {
+		buttons: {
+			contextButton: {
+				menuItems: ["viewFullscreen", "downloadPNG", "downloadJPEG"]
+			}
+		}
+	},
   xAxis: {
     type: 'linear',
 	//tickPixelInterval: 150
 	min:0,
-	max:200,
+	max:150,
     //dateTimeLabelFormats: { second: '%H:%M:%S' }
   },
   plotOptions: {
@@ -86,7 +99,7 @@ var chartT = new Highcharts.Chart({
 	//min: 450,
 	//max: 650,
     title: {
-      text: 'Measure'
+      text: '&hearts;'
     }
   },
   credits: {
@@ -99,10 +112,10 @@ var chartT = new Highcharts.Chart({
 function plotTemperatureSingle(valueString) {
   //console.log(valueString);
   counter++;
-  chartT.xAxis[0].setExtremes(counter - 200,counter);
+  chartT.xAxis[0].setExtremes(counter - 150,counter);
   var x = counter;
   var y = Number(valueString);
-	if(counter > 200) {
+	if(counter > 150) {
     //  counter = 0;
     //  x = counter;	
 	  chartT.series[0].addPoint([x, y], true, true, true);

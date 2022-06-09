@@ -38,7 +38,7 @@ unsigned long timerDelay = 3;
 int adcValue = 0;  /* Variable to store Output of ADC */
 int maxThisWindow = 0;
 int sampleCount = 0;
-int subsample = 3;
+int subsample = 4;
 bool streaming = false;
 
  
