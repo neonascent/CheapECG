@@ -27,29 +27,21 @@ const char* password = "uranium232";
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
-
-// Create an Event Source on /events
-AsyncEventSource events("/events");
-
-// Json Variable to hold sensor readings
-JSONVar readings;
+AsyncWebSocket ws("/ws");
 
 // Timer variables
 unsigned long lastTime = 0;
-unsigned long timerDelay = 300;
+unsigned long timerDelay = 3;
 
 // analogue pin
 #define analogPin A0 /* ESP8266 Analog Pin ADC0 = A0 */
 int adcValue = 0;  /* Variable to store Output of ADC */
+int maxThisWindow = 0;
+int sampleCount = 0;
+int subsample = 3;
+bool streaming = false;
 
-// Get Sensor Readings and return JSON object
-String getSensorReadings(){
-  adcValue = analogRead(analogPin); /* Read the Analog Input value */
-  readings["sensor1"] = String(adcValue);
-  String jsonString = JSON.stringify(readings);
-  return jsonString;
-}
-
+ 
 // Initialize LittleFS
 void initLittleFS() {
   if (!LittleFS.begin()) {
@@ -72,11 +64,56 @@ void initWiFi() {
   Serial.println(WiFi.localIP());
 }
 
+// reply with led state --- we won't use this
+// changed to analog pin
+void notifyClients() {
+//  ws.textAll(String(adcValue));
+    ws.textAll(String(maxThisWindow));
+}
+
+// as titled -- also change
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  //Serial.print("received WS message");
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    if (strcmp((char*)data, "startstream") == 0) {
+      //ledState = !ledState;
+      streaming = true;
+      notifyClients();
+    }
+  }
+}
+
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+    switch (type) {
+      case WS_EVT_CONNECT:
+        Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+        break;
+      case WS_EVT_DISCONNECT:
+        Serial.printf("WebSocket client #%u disconnected\n", client->id());
+        break;
+      case WS_EVT_DATA:
+        handleWebSocketMessage(arg, data, len);
+        break;
+      case WS_EVT_PONG:
+      case WS_EVT_ERROR:
+        break;
+  }
+}
+
+void initWebSocket() {
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
+}
+
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
   initWiFi();
   initLittleFS();
+  initWebSocket();
 
   // Web Server Root URL
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -84,33 +121,32 @@ void setup() {
   });
 
   server.serveStatic("/", LittleFS, "/");
-  
-
-  // Request for the latest sensor readings
-  server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request){
-    lastTime = lastTime + timerDelay;
-    request->send(200, "text/plain", "OK!");
-  });
-
-  events.onConnect([](AsyncEventSourceClient *client){
-    if(client->lastId()){
-      Serial.printf("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
-    }
-    // send event with message "hello!", id current millis
-    // and set reconnect delay to 1 second
-    client->send("hello!", NULL, millis(), 10000);
-  });
-  server.addHandler(&events);
 
   // Start server
   server.begin();
 }
 
 void loop() {
+  ws.cleanupClients();
+  
   if ((millis() - lastTime) > timerDelay) {
-    // Send Events to the client with the Sensor Readings Every 10 seconds
-    events.send("ping",NULL,millis());
-    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+    
+    if (streaming) {
+      // Send Events to the client with the Sensor Readings Every timerDelay milliseconds
+      // if client connected??
+      adcValue = analogRead(analogPin); /* Read the Analog Input value */  
+      maxThisWindow = max(adcValue, maxThisWindow); 
+  
+      // only send out after 
+      if (sampleCount > subsample) {
+        notifyClients();
+        sampleCount = 0;
+        maxThisWindow = 0;
+      }
+      sampleCount = sampleCount + 1;
+    }
+    
     lastTime = millis();
+    
   }
 }
