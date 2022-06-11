@@ -27,7 +27,7 @@
 // Select a Timer Clock
 #define USING_TIM_DIV1                false           // for shortest and most accurate timer
 #define USING_TIM_DIV16               true           // for medium time and medium accurate timer
-#define USING_TIM_DIV256              false            // for longest timer but least accurate. Default
+#define USING_TIM_DIV256              false            // for unsigned longest timer but least accurate. Default
 
 #include "ESP8266TimerInterrupt.h"
 
@@ -57,11 +57,15 @@ AsyncWebSocket ws("/ws");
 
 /* Create a double buffer for data samples. */
 //#define NUMBER_OF_DATA_SAMPLES 256
-#define NUMBER_OF_DATA_SAMPLES 16
-short data_samples[ NUMBER_OF_DATA_SAMPLES * 2 ];
+#define NUMBER_OF_DATA_SAMPLES 32
+#define SAMPLE_AVERAGE 4 // must be a div of samples
+unsigned long data_samples[ NUMBER_OF_DATA_SAMPLES * 2 ];
+unsigned long sample_timestamps[ NUMBER_OF_DATA_SAMPLES * 2 ];
+
 // make sending variable for byte string
-byte dataToSend[ NUMBER_OF_DATA_SAMPLES * 2 ];
-short *data_samples_real;
+byte dataToSend[ NUMBER_OF_DATA_SAMPLES * 8 ];
+unsigned long *data_samples_real;
+unsigned long *sample_timestamps_real;
 /* Indexes used by the interrupt service routine. */
 int  isr_current_data_index;
 /* Semaphor indicating that a frame of geophone samples is ready. */
@@ -72,11 +76,6 @@ bool report_was_created;
 
 // analogue pin
 #define analogPin A0 /* ESP8266 Analog Pin ADC0 = A0 */
-int adcValue = 0;  /* Variable to store Output of ADC */
-int maxThisWindow = 0;
-//int sampleCount = 0;
-//int subsample = 4;
-//bool streaming = false;
 int connections = 0;
 
 
@@ -108,8 +107,9 @@ void initWiFi() {
 // changed to analog pin
 void notifyClients() {
 //  ws.textAll(String(adcValue));
-    ws.textAll(String(maxThisWindow));
+//    ws.textAll(String(maxThisWindow));
 }
+
 
 /*
  * Interrupt service routine for sampling the data.  The data analog
@@ -123,22 +123,29 @@ void notifyClients() {
 void IRAM_ATTR TimerHandler()
 {
   if (connections > 0) {
-    /* Read a sample and store it in the data buffer. */
-    const int adc_resolution = 1024;
-  
-    short data_sample = analogRead( analogPin );
-    data_samples[ isr_current_data_index++ ] = data_sample;
+    /* Read a sample and store it in the data buffer. */  
+    int readValue = analogRead( analogPin );
+    unsigned long data_sample = (unsigned long) readValue;
+    unsigned long sample_timestamp = millis();
+    
+    data_samples[ isr_current_data_index ] = data_sample;
+    // timestamp record too
+    sample_timestamps[ isr_current_data_index ] = sample_timestamp;
+    
+    isr_current_data_index++;
   
     /* Raise a semaphor if the buffer is full and tell which buffer
        is active. */
     if( isr_current_data_index == NUMBER_OF_DATA_SAMPLES )
     {
       data_samples_real     = &data_samples[ 0 ];
+      sample_timestamps_real = &sample_timestamps[ 0 ];
       data_buffer_full      = true;
     }
     else if( isr_current_data_index == NUMBER_OF_DATA_SAMPLES * 2 )
     {
       data_samples_real      = &data_samples[ NUMBER_OF_DATA_SAMPLES ];
+      sample_timestamps_real = &sample_timestamps[ NUMBER_OF_DATA_SAMPLES ];
       isr_current_data_index = 0;
       data_buffer_full       = true;
     }
@@ -183,19 +190,35 @@ void start_sampling( )
  * 
  * Inspired by https://github.com/olewolf/geophone/blob/master/Geosampler.ino
  */
-void report( const short *samples, int length )
+void report( const unsigned long *samples, const unsigned long *timestamps, int length )
 {
-  //String dataCharArray = "";
+  
   /* Send all the samples in the buffer to the serial port. */
-  for( int index = 0; index < length; index++ )
+  int entryCount = 0;
+  for( int index = 0; index < length; index = index + SAMPLE_AVERAGE )
   {
-    short myshort = samples[ index ];
-    byte low = (byte)myshort;
-    byte high = (byte)(myshort >> 8);
-    dataToSend[(index * 2)] = low; // 0, 2, 4, 6
-    dataToSend[(index * 2)+1] = high; // 1, 3, 5, 7
-  }
-  ws.binaryAll(dataToSend, length * 2);
+     unsigned long myValue = 0;
+     unsigned long myTimestamp = timestamps[ index ];
+    // unsigned long into 4 bytes https://forum.arduino.cc/t/how-to-convert-long-int-to-byte/42270
+    // timestamp
+
+    for (int averageIndex = 0; averageIndex < SAMPLE_AVERAGE; averageIndex++) {
+      myValue = max(myValue, samples[ index + averageIndex]);
+    }
+        
+    // little endian
+    dataToSend[(entryCount * 8) + 0] = myTimestamp;
+    dataToSend[(entryCount * 8) + 1] = myTimestamp >> 8;
+    dataToSend[(entryCount * 8) + 2] = myTimestamp >> 16;
+    dataToSend[(entryCount * 8) + 3] = myTimestamp >> 24;
+    dataToSend[(entryCount * 8) + 4] = myValue;
+    dataToSend[(entryCount * 8) + 5] = myValue >> 8;
+    dataToSend[(entryCount * 8) + 6] = myValue >> 16;
+    dataToSend[(entryCount * 8) + 7] = myValue >> 24;
+
+    entryCount++;
+   }
+  ws.binaryAll(dataToSend, ((length * 8) / SAMPLE_AVERAGE));
   /* Indicate to the report LED blinking that the report was submitted. */
   report_was_created = true;
 }
@@ -275,7 +298,7 @@ void loop() {
     data_buffer_full = false;
     if (connections > 0) {
       /* Transmit the samples over websocket. */
-      report( data_samples, NUMBER_OF_DATA_SAMPLES );
+      report( data_samples_real, sample_timestamps_real, NUMBER_OF_DATA_SAMPLES );
     }
   }
 }

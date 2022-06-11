@@ -19,17 +19,26 @@
 
   function onClose(event) {
     console.log('Connection closed');
-    setTimeout(initWebSocket, 2000);
+    setTimeout(initWebSocket, 3000);
   }
+
+	function buf2hex(buffer) { // buffer is an ArrayBuffer
+	  return [...new Uint8Array(buffer)]
+		  .map(x => x.toString(16).padStart(2, '0'))
+		  .join('');
+	}
+
    
    var intArray;
   //https://stackoverflow.com/questions/42464569/javascript-convert-blob-to-float32array-or-other-typed-arrays
   function onMessage(event) {
 	if (event.data instanceof ArrayBuffer) {
-		intArray = new Int16Array(event.data);
-		for (var i = 0; i < (intArray.length ); i++){
-			plotTemperatureSingle(intArray[i]);
-			//console.log("plot: " + String(intArray[i]));
+		intArray = new Uint32Array(event.data);
+		// output hex of byte string for debugging
+		//console.log(buf2hex(event.data));
+		for (var i = 0; i < (intArray.length / 2); i++){
+			plotTemperatureSingle(intArray[i*2], intArray[(i*2)+1]);
+			//console.log("plot - timestamp: " + String(intArray[i*2]) + " value: " + String(intArray[(i*2)+1]));
 		}
 		
 	}
@@ -102,8 +111,8 @@ var chartT = new Highcharts.Chart({
     }
   },
   yAxis: {
-	min: 400,
-	max: 1000,
+	softMin: 400,
+	softMax: 1000,
     title: {
       text: '&hearts;'
     }
@@ -115,13 +124,12 @@ var chartT = new Highcharts.Chart({
 
 
 //Plot temperature in the temperature chart
-function plotTemperatureSingle(valueString) {
-  //console.log(valueString);
-  counter++;
-  chartT.xAxis[0].setExtremes(counter - 150,counter);
-  var x = counter;
-  var y = Number(valueString);
-	if(counter > 150) {
+function plotTemperatureSingle(timestamp, value) {
+  var x = timestamp;
+  var y = value;
+  // window 2 seconds	
+  chartT.xAxis[0].setExtremes(timestamp - 3000, timestamp);
+	if(chartT.series[0].data.length > 200) {
     //  counter = 0;
     //  x = counter;	
 	  chartT.series[0].addPoint([x, y], true, true, true);
@@ -130,6 +138,8 @@ function plotTemperatureSingle(valueString) {
       chartT.series[0].addPoint([x, y], true, false, true);
 	  //chartT.series.addPoint([x, y], true, true, true);
     }
+	
+ 
 }
 
 
