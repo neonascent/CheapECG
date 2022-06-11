@@ -7,6 +7,7 @@
   function initWebSocket() {
     console.log('Trying to open a WebSocket connection...');
     websocket = new WebSocket(gateway);
+	websocket.binaryType = 'arraybuffer';
     websocket.onopen    = onOpen;
     websocket.onclose   = onClose;
     websocket.onmessage = onMessage; // <-- add this line
@@ -20,13 +21,18 @@
     console.log('Connection closed');
     setTimeout(initWebSocket, 2000);
   }
-  
+   
+   var intArray;
+  //https://stackoverflow.com/questions/42464569/javascript-convert-blob-to-float32array-or-other-typed-arrays
   function onMessage(event) {
-	var state;
-    console.log("Received: " + event.data);
-	if (Number.isInteger(Number(event.data))){
-      plotTemperatureSingle(event.data);
-    }
+	if (event.data instanceof ArrayBuffer) {
+		intArray = new Int16Array(event.data);
+		for (var i = 0; i < (intArray.length ); i++){
+			plotTemperatureSingle(intArray[i]);
+			//console.log("plot: " + String(intArray[i]));
+		}
+		
+	}
   }
   
   window.addEventListener('load', onLoad);
@@ -96,8 +102,8 @@ var chartT = new Highcharts.Chart({
     }
   },
   yAxis: {
-	//min: 450,
-	//max: 650,
+	min: 400,
+	max: 1000,
     title: {
       text: '&hearts;'
     }
@@ -126,29 +132,6 @@ function plotTemperatureSingle(valueString) {
     }
 }
 
-
-//Plot temperature in the temperature chart
-function plotTemperature(jsonValue) {
-
-  var keys = Object.keys(jsonValue);
-  console.log(keys);
-  console.log(keys.length);
-
-  for (var i = 0; i < keys.length; i++){
-    var x = (new Date()).getTime();
-    console.log(x);
-    const key = keys[i];
-    var y = Number(jsonValue[key]);
-    console.log(y);
-
-    if(chartT.series[i].data.length > 40) {
-      chartT.series[i].addPoint([x, y], true, true, true);
-    } else {
-      chartT.series[i].addPoint([x, y], true, false, true);
-    }
-
-  }
-}
 
 
 
