@@ -24,8 +24,9 @@
   function onMessage(event) {
 	var state;
     console.log("Received: " + event.data);
-	if (Number.isInteger(Number(event.data))){
-      plotTemperatureSingle(event.data);
+	var parts = event.data.split(",");
+	if (Number.isInteger(Number(parts[0])) && Number.isInteger(Number(parts[1]))){
+      plotTemperatureSingle(Number(parts[0]), Number(parts[1]));
     }
   }
   
@@ -96,8 +97,8 @@ var chartT = new Highcharts.Chart({
     }
   },
   yAxis: {
-	//min: 450,
-	//max: 650,
+	softMin: 400,
+	softMax: 1000,
     title: {
       text: '&hearts;'
     }
@@ -109,12 +110,12 @@ var chartT = new Highcharts.Chart({
 
 
 //Plot temperature in the temperature chart
-function plotTemperatureSingle(valueString) {
+function plotTemperatureSingle(value, timestamp) {
   //console.log(valueString);
   counter++;
-  chartT.xAxis[0].setExtremes(counter - 150,counter);
-  var x = counter;
-  var y = Number(valueString);
+  chartT.xAxis[0].setExtremes(timestamp - 3000,timestamp);
+  var x = timestamp;
+  var y = value;
 	if(counter > 150) {
     //  counter = 0;
     //  x = counter;	

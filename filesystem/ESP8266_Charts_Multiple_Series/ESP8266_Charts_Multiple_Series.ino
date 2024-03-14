@@ -68,7 +68,7 @@ void initWiFi() {
 // changed to analog pin
 void notifyClients() {
 //  ws.textAll(String(adcValue));
-    ws.textAll(String(maxThisWindow));
+    ws.textAll(String(maxThisWindow) + "," + String(millis()));
 }
 
 // as titled -- also change
