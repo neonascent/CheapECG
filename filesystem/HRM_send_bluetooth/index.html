@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Monitor</title>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+</head>
+<body>
+    <button id="connect">Connect to Heart Monitor</button>
+    <div id="bpm">BPM: --</div><div id="bpmtotal">BPM total: --</div>
+    <div id="container" style="width: 100%; height: 400px;"></div>
+    
+    <script>
+
+	
+	document.addEventListener("DOMContentLoaded", async function () {
+        let chart = Highcharts.chart('container', {
+            chart: { type: 'line', animation: false },
+            title: { text: 'Heart Monitor Signal' },
+            xAxis: { type: 'datetime' },
+            yAxis: { title: { text: 'Signal Value' }, min: 500, max: 1500 },
+			plotOptions: { series: {  marker: { enabled: false, states: { hover: { enabled: false } }}}},
+            series: [{ name: 'Heart Signal', data: [] }]
+
+        });
+        
+        let port;
+        let reader;
+        let lastPeakTime = null;
+		let totalBeatCount = 0;
+		let firstBeatTime = null;
+		let bpmHistory = []; // Store the last few BPM readings
+		let lastSignal = 0; // Store previous signal value
+		let displayBPM = 100; // Smoothed BPM
+		const SMOOTHING_WINDOW = 10; // Number of beats to average
+		const smoothingFactor = 0.01; // Smoothing factor for exponential smoothing; // Smoothing factor (lower = smoother)
+		const smoothingInterval = 100; // Interval to update BPM (ms)
+
+		// Call this function every 50ms to update the BPM display
+		setInterval(smoothBPM, smoothingInterval);
+
+        async function connectSerial() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                reader = port.readable.getReader();
+                readSerialData();
+            } catch (error) {
+                console.error('Serial connection error:', error);
+            }
+        }
+        
+	async function readSerialData() {
+		let decoder = new TextDecoder();
+		let buffer = ""; // Accumulate incoming data
+
+		while (port && reader) {
+			try {
+				const { value, done } = await reader.read();
+				if (done) break;
+				if (value) {
+					buffer += decoder.decode(value, { stream: true });
+
+					// Process each complete line
+					let lines = buffer.split("\n");
+					buffer = lines.pop(); // Keep the last incomplete line
+
+					for (let line of lines) {
+						processSerialData(line.trim());
+					}
+				}
+			} catch (error) {
+				console.error('Error reading serial data:', error);
+				break;
+			}
+		}
+	}
+        
+	function smoothBPM() {
+		// Apply exponential smoothing
+
+		// Smoothly adjust displayBPM towards bpm
+		// Compute the rolling average BPM
+        bpmAcrossWindow = Math.round(bpmHistory.reduce((sum, b) => sum + b, 0) / bpmHistory.length);
+		displayBPM = isNaN(bpmAcrossWindow)? 	displayBPM : displayBPM * (1 - smoothingFactor) + bpmAcrossWindow * smoothingFactor;
+		//console.log('BPM: ' + bpm.toString() + " BMP across window" + bpmAcrossWindow.toString() + " display " + displayBPM.toString());
+		document.getElementById('bpm').innerText = `BPM: ${Math.round(displayBPM)}`;
+		
+		let now = Date.now();
+		let timeDiff = (now - firstBeatTime) / 1000 / 60; // Time in minutes
+        let totalBpm = Math.round(totalBeatCount / timeDiff);
+		document.getElementById('bpmtotal').innerText = `BPM Total: ${Math.round(totalBpm)}`;
+	}
+		
+	function processSerialData(value) {
+    let signal = parseInt(value, 10);
+    if (isNaN(signal) || signal < 500 || signal > 1500) return;
+    
+    let now = Date.now();
+
+    // Rising edge detection (crossing 1000 from below)
+    if (lastSignal < 1000 && signal >= 1000) {
+        if (lastPeakTime) {
+            let timeDiff = (now - lastPeakTime) / 1000; // Time in seconds
+            let newBpm = Math.round(60 / timeDiff);
+
+            // Only update if BPM is realistic
+            if (newBpm > 30 && newBpm < 250) {
+				if (totalBeatCount == 0) {
+					// start counter at first beat
+					firstBeatTime = now;
+				}
+				totalBeatCount++;
+				
+				
+				bpmHistory.push(newBpm);
+                
+                // Keep only the last few BPM readings
+                if (bpmHistory.length > SMOOTHING_WINDOW) {
+                    bpmHistory.shift();
+                }
+
+                // Compute the rolling average BPM
+                bpm = Math.round(bpmHistory.reduce((sum, b) => sum + b, 0) / bpmHistory.length);
+
+            }
+        }
+        lastPeakTime = now;
+    }
+
+    lastSignal = signal;
+
+    
+
+    chart.series[0].addPoint([now, signal], true, chart.series[0].data.length > 100);
+}
+
+        
+        document.getElementById('connect').addEventListener('click', connectSerial);
+    });
+    </script>
+</body>
+</html>
