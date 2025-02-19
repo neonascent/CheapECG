@@ -8,6 +8,7 @@
 </head>
 <body>
     <button id="connect">Connect to Heart Monitor</button>
+	<button id="reset">Reset BPM Calc</button>
     <div id="bpm">BPM: --</div><div id="bpmtotal">BPM total: --</div>
     <div id="container" style="width: 100%; height: 400px;"></div>
     
@@ -89,8 +90,12 @@
 		
 		let now = Date.now();
 		let timeDiff = (now - firstBeatTime) / 1000 / 60; // Time in minutes
-        let totalBpm = Math.round(totalBeatCount / timeDiff);
+        let totalBpm = totalBeatCount / timeDiff;
 		document.getElementById('bpmtotal').innerText = `BPM Total: ${Math.round(totalBpm)}`;
+	}
+	
+	function resetBPMCalc() {
+		totalBeatCount = 0;
 	}
 		
 	function processSerialData(value) {
@@ -138,6 +143,7 @@
 
         
         document.getElementById('connect').addEventListener('click', connectSerial);
+		document.getElementById('reset').addEventListener('click', resetBPMCalc);
     });
     </script>
 </body>
