@@ -38,13 +38,15 @@ document.addEventListener("DOMContentLoaded", async function () {
     let displayBPM = 100;
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 5;
-    const RECONNECT_DELAY = 5000; // 5 seconds
+    const RECONNECT_DELAY = 2000; // Faster reconnect
+    const CHART_HISTORY_LIMIT = 500; // Increased data storage
+    const updateInterval = 50; // Faster update (every 50ms)
+    let lastUpdate = 0;
 
-    const SMOOTHING_WINDOW = 10;
-    const smoothingFactor = 0.01;
-    const smoothingInterval = 100;
+    // Array buffer for high-speed data rendering
+    let ecgBuffer = [];
 
-    setInterval(smoothBPM, smoothingInterval);
+    setInterval(smoothBPM, 50); // Update BPM more frequently for smooth display
 
     async function connectBLE() {
         try {
@@ -55,23 +57,19 @@ document.addEventListener("DOMContentLoaded", async function () {
             });
 
             updateStatus("Device found, connecting...");
-
             device.addEventListener('gattserverdisconnected', handleDisconnect);
 
             server = await device.gatt.connect();
             updateStatus("Connected to GATT server");
 
             const service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-            updateStatus("Service retrieved");
-
             characteristic = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-            updateStatus("Characteristic retrieved");
 
             await characteristic.startNotifications();
             characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
-
+            
             updateStatus("Connected and receiving data...");
-            reconnectAttempts = 0; // Reset reconnect counter
+            reconnectAttempts = 0;
 
         } catch (error) {
             console.error("BLE connection error:", error);
@@ -80,13 +78,18 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     function handleBLEData(event) {
+        let now = Date.now();
         let value = event.target.value;
         let signal = value.getUint16(0, true); // Read as Little Endian
-        let now = Date.now();
 
-        chart.series[0].addPoint([now, signal], true, chart.series[0].data.length > 100);
+        if (isNaN(signal)) return; // || signal < 500 || signal > 1500) return;
 
-        if (isNaN(signal) || signal < 500 || signal > 1500) return;
+        ecgBuffer.push([now, signal]); // Store data for batch updates
+
+        if (now - lastUpdate >= updateInterval) {
+            lastUpdate = now;
+            requestAnimationFrame(updateChart);
+        }
 
         if (lastSignal < 1000 && signal >= 1000) {
             if (lastPeakTime) {
@@ -98,9 +101,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                     totalBeatCount++;
 
                     bpmHistory.push(newBpm);
-                    if (bpmHistory.length > SMOOTHING_WINDOW) bpmHistory.shift();
-
-                    bpm = Math.round(bpmHistory.reduce((sum, b) => sum + b, 0) / bpmHistory.length);
+                    if (bpmHistory.length > 10) bpmHistory.shift();
                 }
             }
             lastPeakTime = now;
@@ -109,9 +110,21 @@ document.addEventListener("DOMContentLoaded", async function () {
         lastSignal = signal;
     }
 
+function updateChart() {
+    if (ecgBuffer.length > 0) {
+        let latestData = ecgBuffer.splice(0, ecgBuffer.length); // Take all new data and clear buffer
+        
+        requestAnimationFrame(() => {
+            latestData.forEach(point => {
+                chart.series[0].addPoint(point, true, chart.series[0].data.length > CHART_HISTORY_LIMIT);
+            });
+        });
+    }
+}
+
     function smoothBPM() {
         let bpmAcrossWindow = Math.round(bpmHistory.reduce((sum, b) => sum + b, 0) / bpmHistory.length);
-        displayBPM = isNaN(bpmAcrossWindow) ? displayBPM : displayBPM * (1 - smoothingFactor) + bpmAcrossWindow * smoothingFactor;
+        displayBPM = isNaN(bpmAcrossWindow) ? displayBPM : displayBPM * (1 - 0.01) + bpmAcrossWindow * 0.01;
         document.getElementById('bpm').innerText = `BPM: ${Math.round(displayBPM)}`;
 
         let now = Date.now();
@@ -122,18 +135,21 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function resetBPMCalc() {
         totalBeatCount = 0;
+        bpmHistory = [];
+        displayBPM = 100;
+        firstBeatTime = null;
+        lastPeakTime = null;
+        ecgBuffer = [];
+        updateStatus("BPM calculation reset.");
     }
 
     function handleDisconnect() {
-        updateStatus("Device disconnected. Attempting to reconnect...", true);
+        updateStatus("Device disconnected. Reconnecting...", true);
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts++;
-            setTimeout(() => {
-                console.log(`Reconnecting attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}...`);
-                connectBLE();
-            }, RECONNECT_DELAY);
+            setTimeout(connectBLE, RECONNECT_DELAY);
         } else {
-            updateStatus("Failed to reconnect after multiple attempts. Please reconnect manually.", true);
+            updateStatus("Failed to reconnect. Please reconnect manually.", true);
         }
     }
 
@@ -148,6 +164,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     document.getElementById('reset').addEventListener('click', resetBPMCalc);
 });
 </script>
+
 <div id="status" style="font-size: 16px; font-weight: bold; margin-top: 10px; color: black;">Status: Not connected</div>
+
 </body>
 </html>

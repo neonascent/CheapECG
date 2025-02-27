@@ -43,6 +43,8 @@ bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint16_t txValue = 0;
 
+bool isPeak = false;
+
 
 
 
@@ -65,22 +67,22 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 };
 
-// class MyCallbacks : public BLECharacteristicCallbacks {
-//   void onWrite(BLECharacteristic *pCharacteristic) {
-//     String rxValue = pCharacteristic->getValue();
+class MyCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String rxValue = pCharacteristic->getValue();
 
-//     if (rxValue.length() > 0) {
-//       Serial.println("*********");
-//       Serial.print("Received Value: ");
-//       for (int i = 0; i < rxValue.length(); i++) {
-//         Serial.print(rxValue[i]);
-//       }
+    if (rxValue.length() > 0) {
+      Serial.println("*********");
+      Serial.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++) {
+        Serial.print(rxValue[i]);
+      }
 
-//       Serial.println();
-//       Serial.println("*********");
-//     }
-//   }
-// };
+      Serial.println();
+      Serial.println("*********");
+    }
+  }
+};
 
 void setup() {
   Serial.begin(115200);
@@ -100,9 +102,9 @@ void setup() {
 
   pTxCharacteristic->addDescriptor(new BLE2902());
 
-  // BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
+   //BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
 
-  // pRxCharacteristic->setCallbacks(new MyCallbacks());
+   //pRxCharacteristic->setCallbacks(new MyCallbacks());
 
   // Start the service
   pService->start();
@@ -143,22 +145,37 @@ doSample();
 void doSample() {
   if ((millis() - lastTime) > timerDelay) {
     
-    adcValue = analogRead(analogPin)/4; /* Read the Analog Input value */  
+    adcValue = analogRead(analogPin); /* Read the Analog Input value */  
     average = average + adcValue;
     maxThisWindow = max(adcValue, maxThisWindow); 
 
     // only send out after 
     if (sampleCount > subsample) {
-      float valueAverage = average/subsample;
-      sendData((uint16_t)valueAverage);
-      Serial.println(String(valueAverage));
+      float valueAverage = average/subsample/4;
+      processData(valueAverage);
+      //sendData((uint16_t)valueAverage);
+      //Serial.println(String(valueAverage));
       sampleCount = 0;
-      average = 512;
+      average = 2048;
       maxThisWindow = 0;
     }
     sampleCount = sampleCount + 1;
     lastTime = millis();
     
+  }
+}
+
+void processData(float value)  {
+  if (!isPeak) {
+    if (value >1000) {
+      sendData((uint16_t)1500);
+      isPeak = true;
+    }
+  } else {
+    if (value <1000) {
+      sendData((uint16_t)0);
+      isPeak = false;
+    }
   }
 }
 
@@ -169,5 +186,5 @@ void sendData(uint16_t value) {
     pTxCharacteristic->setValue(data, 2); // Send 16-bit value (2 bytes)
     pTxCharacteristic->notify();  
     //Serial.printf("Sent: %u\n", value);
-    Serial.printf("%u\n", value);
+   //Serial.printf("%u\n", value);
 }
