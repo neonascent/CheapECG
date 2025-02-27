@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 5;
     const RECONNECT_DELAY = 2000; // Faster reconnect
-    const CHART_HISTORY_LIMIT = 500; // Increased data storage
+    const CHART_HISTORY_LIMIT = 50; // Increased data storage
     const updateInterval = 50; // Faster update (every 50ms)
     let lastUpdate = 0;
 
@@ -79,19 +79,28 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     function handleBLEData(event) {
         let now = Date.now();
-        let value = event.target.value;
-        let signal = value.getUint16(0, true); // Read as Little Endian
+		let value = event.target.value;
+		//let peakSignal = value.getUint8(0); // Read 8-bit unsigned int
 
-        if (isNaN(signal)) return; // || signal < 500 || signal > 1500) return;
+		//if (isNaN(peakSignal)) return; // Ensure valid range
 
-        ecgBuffer.push([now, signal]); // Store data for batch updates
+		let lowSignal = 0;//Math.max(peakSignal * 0.6, 10);  // Artificial low point (~60% of peak)
+		let delayBefore = 30; // Time before peak (ms)
+		let delayAfter = 50;  // Time after peak (ms)
 
-        if (now - lastUpdate >= updateInterval) {
-            lastUpdate = now;
-            requestAnimationFrame(updateChart);
-        }
+		// Insert artificial low point *before* peak
+		ecgBuffer.push([now - delayBefore, lowSignal]);
 
-        if (lastSignal < 1000 && signal >= 1000) {
+		// Insert actual peak
+		ecgBuffer.push([now, 1200]);
+
+		// Insert artificial low point *after* peak
+		ecgBuffer.push([now + delayAfter, lowSignal]);
+
+		requestAnimationFrame(updateChart);
+
+		// do BPM detection stuff
+        //if (lastSignal < 1000 && signal >= 1000) {
             if (lastPeakTime) {
                 let timeDiff = (now - lastPeakTime) / 1000;
                 let newBpm = Math.round(60 / timeDiff);
@@ -105,9 +114,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                 }
             }
             lastPeakTime = now;
-        }
+        //}
 
-        lastSignal = signal;
+        //lastSignal = signal;
     }
 
 function updateChart() {

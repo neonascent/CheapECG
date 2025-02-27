@@ -42,6 +42,7 @@ BLECharacteristic *pTxCharacteristic;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint16_t txValue = 0;
+uint8_t beatValue = 0;
 
 bool isPeak = false;
 
@@ -168,15 +169,23 @@ void doSample() {
 void processData(float value)  {
   if (!isPeak) {
     if (value >1000) {
-      sendData((uint16_t)1500);
+      //sendData((uint16_t)1500);
+      sendBeat();
       isPeak = true;
     }
   } else {
     if (value <1000) {
-      sendData((uint16_t)0);
+      //sendData((uint16_t)0);
       isPeak = false;
     }
   }
+}
+
+void sendBeat() {
+    pTxCharacteristic->setValue(&beatValue, 1);
+    pTxCharacteristic->notify();  
+    beatValue++;
+    Serial.printf("Beat");
 }
 
 void sendData(uint16_t value) {
