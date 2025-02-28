@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Heart Monitor</title>
     <script src="https://code.highcharts.com/highcharts.js"></script>
+	<script src="https://code.highcharts.com/modules/exporting.js"></script>
+	<script src="https://code.highcharts.com/modules/offline-exporting.js"></script>
+	
+	
 </head>
 <body>
     <button id="connect">Connect to Heart Monitor</button>
@@ -30,6 +34,7 @@
         let reader;
         let lastPeakTime = null;
 		let totalBeatCount = 0;
+		 let peakThreshold = 800;
 		let firstBeatTime = null;
 		let bpmHistory = []; // Store the last few BPM readings
 		let lastSignal = 0; // Store previous signal value
@@ -44,7 +49,7 @@
         async function connectSerial() {
             try {
                 port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
+                await port.open({ baudRate: 9600 });
                 reader = port.readable.getReader();
                 readSerialData();
             } catch (error) {
@@ -105,7 +110,7 @@
     let now = Date.now();
 
     // Rising edge detection (crossing 1000 from below)
-    if (lastSignal < 1000 && signal >= 1000) {
+    if (lastSignal < peakThreshold && signal >= peakThreshold) {
         if (lastPeakTime) {
             let timeDiff = (now - lastPeakTime) / 1000; // Time in seconds
             let newBpm = Math.round(60 / timeDiff);

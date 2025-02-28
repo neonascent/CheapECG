@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Monitor</title>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+	<script src="https://code.highcharts.com/modules/exporting.js"></script>
+	<script src="https://code.highcharts.com/modules/offline-exporting.js"></script>
+	
+	
+</head>
+<body>
+    <button id="connect">Connect to Heart Monitor</button>
+	<button id="reset">Reset BPM Calc</button>
+    <div id="bpm">BPM: --</div><div id="bpmtotal">BPM total: --</div>
+    <div id="container" style="width: 100%; height: 400px;"></div>
+    
+    <script>
+document.addEventListener("DOMContentLoaded", async function () {
+    let updateRate = 1000; // Adjustable update interval in milliseconds (default 1 second)
+    let chart = Highcharts.chart('container', {
+        chart: { type: 'line', animation: false },
+        title: { text: 'Heart Rate Monitor' },
+        xAxis: { type: 'datetime' },
+        yAxis: { title: { text: 'BPM' }, min: 40, max: 200 },
+        plotOptions: { series: { marker: { enabled: true } } },
+        series: [{ name: 'BPM', data: [] }]
+    });
+
+    let device;
+    let characteristic;
+    let server;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const RECONNECT_DELAY = 2000;
+    const CHART_HISTORY_LIMIT = 50;
+    let lastUpdate = 0;
+
+    let bpmBuffer = []; // Stores received BPM values
+    let currentBPM = 0;
+
+    async function connectBLE() {
+        try {
+            updateStatus("Searching for device...");
+            device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
+            });
+
+            updateStatus("Device found, connecting...");
+            device.addEventListener('gattserverdisconnected', handleDisconnect);
+
+            server = await device.gatt.connect();
+            updateStatus("Connected to GATT server");
+
+            const service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+            characteristic = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleBLEData);
+            
+            updateStatus("Connected and receiving BPM data...");
+            reconnectAttempts = 0;
+
+        } catch (error) {
+            console.error("BLE connection error:", error);
+            updateStatus(`BLE Error: ${error.message}`, true);
+        }
+    }
+
+    function handleBLEData(event) {
+        let now = Date.now();
+        let value = event.target.value;
+        let bpm = value.getUint8(0); // Read BPM from BLE (uint8_t)
+
+        if (isNaN(bpm) || bpm < 30 || bpm > 250) return; // Ignore unrealistic BPM values
+
+        currentBPM = bpm; // Store latest BPM
+        bpmBuffer.push([now, bpm]);
+
+        requestAnimationFrame(updateChart);
+    }
+
+    function updateChart() {
+        let now = Date.now();
+        if (now - lastUpdate >= updateRate) {
+            lastUpdate = now;
+
+            if (bpmBuffer.length > 0) {
+                let latestData = bpmBuffer.splice(0, bpmBuffer.length); // Take all new data and clear buffer
+                
+                requestAnimationFrame(() => {
+                    latestData.forEach(point => {
+                        chart.series[0].addPoint(point, true, chart.series[0].data.length > CHART_HISTORY_LIMIT);
+                    });
+                });
+            }
+            
+            document.getElementById('bpm').innerText = `BPM: ${currentBPM}`;
+        }
+    }
+
+    function resetBPMCalc() {
+        bpmBuffer = [];
+        currentBPM = 0;
+        updateStatus("BPM calculation reset.");
+    }
+
+    function handleDisconnect() {
+        updateStatus("Device disconnected. Reconnecting...", true);
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            setTimeout(connectBLE, RECONNECT_DELAY);
+        } else {
+            updateStatus("Failed to reconnect. Please reconnect manually.", true);
+        }
+    }
+
+    function updateStatus(message, isError = false) {
+        console.log(message);
+        let statusElement = document.getElementById("status");
+        statusElement.innerText = message;
+        statusElement.style.color = isError ? "red" : "black";
+    }
+
+    document.getElementById('connect').addEventListener('click', connectBLE);
+    document.getElementById('reset').addEventListener('click', resetBPMCalc);
+});
+</script>
+
+<div id="status" style="font-size: 16px; font-weight: bold; margin-top: 10px; color: black;">Status: Not connected</div>
+
+
+</body>
+</html>
